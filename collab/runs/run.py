@@ -73,14 +73,21 @@ class Run:
         self._tasks: set[asyncio.Task] = set()
         self._finished = asyncio.Event()
         self._executor_requested = False
+        self._n = 0
 
     # --- events ---
 
     def subscribe(self, fn: Callable[[dict], None]) -> None:
         self._subscribers.append(fn)
 
+    def unsubscribe(self, fn: Callable[[dict], None]) -> None:
+        if fn in self._subscribers:
+            self._subscribers.remove(fn)
+
     def _record(self, event: dict) -> None:
-        event = {"at": time.time(), **event}
+        # n orders events so a stream can replay events.jsonl and then follow live without duplicates.
+        self._n += 1
+        event = {"n": self._n, "at": time.time(), **event}
         self.deps.store.append(self.id, event)
         for fn in self._subscribers:
             fn(event)
