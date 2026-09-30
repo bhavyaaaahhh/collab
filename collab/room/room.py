@@ -213,6 +213,8 @@ class Room:
         if checkpoint_id not in self.checkpoints:
             raise RoomError(f"No checkpoint with id {checkpoint_id}.")
         cp = self.checkpoints[checkpoint_id]
+        if cp.status != "pending":
+            raise RoomError(f"Checkpoint {checkpoint_id} was already {cp.status}.")
         cp.status, cp.selected, cp.note = status, selected, note
         self._emit("checkpoint", cp.model_dump())
         self.post("system", CHECKPOINT_MESSAGES[(cp.kind, status)])
