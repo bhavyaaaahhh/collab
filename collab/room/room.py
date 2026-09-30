@@ -167,6 +167,11 @@ class Room:
         c = Conclusion(id=self._next_id("conclusion"), by=by, changes=changes, unresolved=unresolved, agreed_by=[by])
         self.conclusions[c.id] = c
         self._emit("conclusion", c.model_dump())
+        # Partners only see the room, so the full proposal goes there for them to review.
+        body = "\n".join(f"{i + 1}. {x}" for i, x in enumerate(changes)) or "(no changes)"
+        if unresolved:
+            body += "\n\nUnresolved:\n" + "\n".join(f"- {x}" for x in unresolved)
+        self.post("system", f"{by} proposed {c.id}. Review it, then agree_to_conclusion or reject_conclusion.\n\nChanges:\n{body}")
         return c
 
     def agree_conclusion(self, by: str, conclusion_id: str) -> Conclusion:

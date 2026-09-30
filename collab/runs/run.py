@@ -115,6 +115,10 @@ class Run:
         return self.agents[name].status if name in self.agents else None
 
     @property
+    def finished(self) -> bool:
+        return self._closed
+
+    @property
     def _closed(self) -> bool:
         return self.record.status in ("completed", "stopped", "failed")
 
@@ -157,6 +161,9 @@ class Run:
             work_dir=self.dir / "agents" / agent.name,
             resume_session_id=agent.session_id,
             model=self.deps.config.models.get(agent.kind),
+            extra_allowed_tools=self.deps.config.claude_extra_allowed_tools,
+            strict_mcp=self.deps.config.claude_strict_mcp,
+            env=self.deps.config.claude_env if agent.kind == "claude" else {},
         )
         agent.active = False
         self._set_agent_status(agent, "working")
@@ -222,6 +229,9 @@ class Run:
         for agent in self.agents.values():
             if agent.process:
                 agent.process.kill()
+            if agent.status in ("starting", "working", "waiting"):
+                agent.status = "done"
+                self._record({"kind": "status", "agent": agent.name, "status": "done"})
         for task in self._tasks:
             if task is not asyncio.current_task():
                 task.cancel()

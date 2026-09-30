@@ -42,8 +42,24 @@ def test_review_is_read_only_and_resumes(tmp_path):
     tools = c.argv[c.argv.index("--allowedTools") + 1].split(",")
     assert "mcp__room__wait_for_messages" in tools and "Read" in tools and "Edit" not in tools
     assert c.env["MCP_TOOL_TIMEOUT"] == "120000"
+    settings = json.loads(c.argv[c.argv.index("--settings") + 1])
+    assert settings == {"disableAllHooks": True, "env": {"ENABLE_TOOL_SEARCH": "false"}}
     mcp = json.loads(c.files[tmp_path / "mcp.json"])
     assert mcp["mcpServers"]["room"]["env"]["COLLAB_AGENT"] == "claude"
+
+
+def test_mcp_isolation_and_extra_tools(tmp_path):
+    assert "--strict-mcp-config" in claude.build_command(opts(tmp_path)).argv
+    loose = claude.build_command(opts(tmp_path, strict_mcp=False, extra_allowed_tools=["mcp__headroom__headroom_retrieve"]))
+    assert "--strict-mcp-config" not in loose.argv
+    assert "mcp__headroom__headroom_retrieve" in loose.argv[loose.argv.index("--allowedTools") + 1]
+    assert "--strict-mcp-config" in claude.build_command(opts(tmp_path, strict_mcp=True)).argv
+
+
+def test_agent_env_goes_into_settings(tmp_path):
+    c = claude.build_command(opts(tmp_path, env={"ANTHROPIC_BASE_URL": "https://api.anthropic.com"}))
+    env = json.loads(c.argv[c.argv.index("--settings") + 1])["env"]
+    assert env == {"ENABLE_TOOL_SEARCH": "false", "ANTHROPIC_BASE_URL": "https://api.anthropic.com"}
 
 
 def test_execute_can_edit(tmp_path):

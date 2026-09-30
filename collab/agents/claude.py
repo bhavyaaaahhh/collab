@@ -5,6 +5,7 @@ from collab.room.tools import TOOL_NAMES
 
 READ_TOOLS = ["Read", "Grep", "Glob", "LS"]
 WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "Bash"]
+AGENT_SETTINGS = {"disableAllHooks": True, "env": {"ENABLE_TOOL_SEARCH": "false"}}
 
 
 class ClaudeAdapter:
@@ -13,15 +14,19 @@ class ClaudeAdapter:
     def build_command(self, o: LaunchOpts) -> Command:
         mcp_path = o.work_dir / "mcp.json"
         mcp = {"mcpServers": {"room": {"command": o.bridge.command, "args": o.bridge.args, "env": o.bridge.env}}}
-        tools = [f"mcp__room__{name}" for name in TOOL_NAMES] + READ_TOOLS
+        tools = [f"mcp__room__{name}" for name in TOOL_NAMES] + READ_TOOLS + o.extra_allowed_tools
         if o.mode == "execute":
             tools += WRITE_TOOLS
         argv = [
             o.bin, "-p", o.prompt,
             "--output-format", "stream-json", "--verbose",
-            "--mcp-config", str(mcp_path), "--strict-mcp-config",
+            "--mcp-config", str(mcp_path), *(["--strict-mcp-config"] if o.strict_mcp else []),
             "--allowedTools", ",".join(tools),
             "--permission-mode", "acceptEdits" if o.mode == "execute" else "default",
+            # Hooks and tool search let user-side context compressors (hooks or an ANTHROPIC_BASE_URL proxy)
+            # rewrite tool results into references to tools this session doesn't have. The API then rejects
+            # the session with a 400 on every resume. Agents need the room tools up front anyway.
+            "--settings", json.dumps({**AGENT_SETTINGS, "env": {**AGENT_SETTINGS["env"], **o.env}}),
         ]
         if o.resume_session_id:
             argv += ["--resume", o.resume_session_id]

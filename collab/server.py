@@ -146,9 +146,7 @@ async def event_stream(app: FastAPI, run_id: str) -> AsyncIterator[str]:
         for event in store.events(run_id):
             last = event.get("n", last)
             yield _sse(event)
-        if not run:
-            return
-        while True:
+        while run and not (run.finished and queue.empty()):
             try:
                 event = await asyncio.wait_for(queue.get(), 15)
             except TimeoutError:
