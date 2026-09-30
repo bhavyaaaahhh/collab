@@ -208,6 +208,7 @@ async def test_stop_kills_everything(tmp_path):
     assert sorted(fake.killed) == ["claude", "codex"]
     assert run.record.status == "stopped"
     assert run.deps.store.get(run.id).status == "stopped"
+    assert run.agent_status("claude") == run.agent_status("codex") == "done"
     kinds = {e["kind"] for e in run.deps.store.events(run.id)}
     assert {"agent", "status", "run"} <= kinds
     assert len(fake.calls) == 2  # nothing resumed after stop

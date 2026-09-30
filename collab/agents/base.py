@@ -33,6 +33,9 @@ class LaunchOpts:
     work_dir: Path  # where per-agent files (e.g. mcp config) are written
     resume_session_id: str | None = None
     model: str | None = None
+    extra_allowed_tools: list[str] = field(default_factory=list)
+    strict_mcp: bool = True
+    env: dict[str, str] = field(default_factory=dict)  # agent-only env, applied over user settings
 
 
 @dataclass

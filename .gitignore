@@ -5,3 +5,4 @@ __pycache__/
 /runs/
 web/node_modules/
 web/dist/
+collab.config.local.json

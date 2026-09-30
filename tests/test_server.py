@@ -78,6 +78,13 @@ async def test_stop_and_past_run(client, setup):
     assert "event: record" in events.text and '"kind": "run"' in events.text
 
 
+async def test_stream_of_finished_live_run_closes(client, setup):
+    run_id = await start(client, setup)
+    await client.post(f"/api/runs/{run_id}/stop")
+    res = await asyncio.wait_for(client.get(f"/api/runs/{run_id}/stream"), 3)
+    assert '"status": "stopped"' in res.text
+
+
 async def test_unknown_run_404(client):
     assert (await client.get("/api/runs/nope")).status_code == 404
     assert (await client.post("/api/runs/nope/tool", json={"agent": "a", "name": "b", "args": {}})).status_code == 404
