@@ -1,0 +1,7 @@
+{
+  "port": 4747,
+  "bin": { "claude": "claude", "codex": "codex" },
+  "models": { "claude": null, "codex": null },
+  "budget": { "max_messages": 80, "max_minutes": 30 },
+  "wait_timeout_s": 40
+}
