@@ -18,7 +18,7 @@ There is no controller deciding who speaks when. Each agent is a single long-run
 How they behave is governed by a **collaboration prompt** (the "working agreement"), not by code. The app is infrastructure: it carries messages, shows everything, enforces a budget, and gates the two actions that need the user's approval.
 
 ```
-            ┌──────────── app (Node + TS) ────────────┐
+            ┌──────────── app (Python) ───────────────┐
  browser ◄──┤ dashboard (SSE)   room state   run store│
             └──────▲─────────────────▲────────────────┘
                    │ MCP (room tools)│
