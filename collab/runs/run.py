@@ -49,6 +49,8 @@ class Agent:
     idle_exits: int = 0
     crashes: int = 0
     last_text: str = ""
+    errored: bool = False
+    last_error: str = ""
 
 
 class Run:
@@ -181,6 +183,9 @@ class Run:
             self.record = self.deps.store.update(self.id, sessions=self.record.sessions)
         if e.type == "text":
             agent.last_text = e.data.get("text", "")
+        if e.type == "error":
+            agent.errored = True
+            agent.last_error = e.data.get("message", "")
         self._record({"kind": "agent", "agent": agent.name, "event": {"type": e.type, "data": e.data}})
 
     async def _supervise(self, agent: Agent) -> None:
@@ -190,7 +195,7 @@ class Run:
             if self._closed:
                 return
             if agent.role == "executor":
-                await self._finish_executor(agent)
+                await self._finish_executor(agent, code)
                 return
             outcome = self._after_exit(agent, code)
             if outcome is not None:
@@ -314,15 +319,22 @@ class Run:
         prompt = self._prompt(EXECUTOR, " and ".join(self.reviewers), "executor", extra)
         self._add_agent(EXECUTOR, self.record.executor, "executor", prompt)
 
-    async def _finish_executor(self, agent: Agent) -> None:
-        self._set_agent_status(agent, "done")
+    async def _finish_executor(self, agent: Agent, code: int) -> None:
+        # A CLI can exit 0 after an API error, so an error event also counts as failure.
+        failed = code != 0 or agent.errored
+        self._set_agent_status(agent, "failed" if failed else "done")
         diff = await asyncio.to_thread(_git_diff_stat, Path(self.record.cwd))
         said = [m.text for m in self.room.messages if m.sender == agent.name]
-        body = f"# Executor summary\n\n{(said[-1] if said else agent.last_text) or '(no summary)'}\n"
+        if failed:
+            reason = agent.last_error or f"exit {code}"
+            self.room.post("system", f"The executor failed before finishing: {reason}")
+            body = f"# Executor failed\n\n{reason}\n\nCheck the working directory: some edits may have been made.\n"
+        else:
+            body = f"# Executor summary\n\n{(said[-1] if said else agent.last_text) or '(no summary)'}\n"
         if diff is not None:
             body += f"\n## git diff --stat\n\n```\n{diff or '(no changes)'}\n```\n"
         self.deps.store.write_artifact(self.id, "executor.md", body)
-        self._complete()
+        self._complete("failed" if failed else "completed")
 
     def _write_conclusion(self, conclusion: Conclusion | None) -> None:
         by_status: dict[str, list[str]] = {"agreed": [], "resolved": [], "contested": [], "open": []}

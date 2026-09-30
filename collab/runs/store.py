@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from collab.agents.base import AgentKind
 from collab.config import Budget
+from collab.runs.prompt import agent_names
 
 RunStatus = Literal["running", "waiting", "completed", "stopped", "failed", "interrupted"]
 
@@ -80,6 +81,33 @@ class RunStore:
             except ValueError:
                 continue  # partial last line from a crash
         return events
+
+    def summary(self, record: RunRecord) -> dict:
+        """Headline numbers for the runs list, derived from events.jsonl."""
+        reviewers = agent_names(record.agents)
+        messages, findings, cost, ended = 0, set(), 0.0, record.created_at
+        agreed_changes, executor, executor_errored = None, None, False
+        for e in self.events(record.id):
+            ended = max(ended, e.get("at", ended))
+            if e.get("kind") == "room":
+                kind, data = e["event"]["type"], e["event"]["data"]
+                if kind == "message" and data.get("sender") in reviewers:
+                    messages += 1
+                elif kind == "finding":
+                    findings.add(data["finding"]["id"])
+                elif kind == "conclusion" and all(r in data.get("agreed_by", []) for r in reviewers):
+                    agreed_changes = len(data.get("changes", []))
+            elif e.get("kind") == "status" and e.get("agent") == "executor":
+                executor = e.get("status")
+            elif e.get("kind") == "agent":
+                if e.get("agent") == "executor" and e["event"]["type"] == "error":
+                    executor_errored = True
+                if e["event"]["type"] == "turn_end":
+                    cost += e["event"]["data"].get("cost_usd") or 0
+        return {"messages": messages, "findings": len(findings), "cost_usd": round(cost, 4), "ended_at": ended,
+                "agreed_changes": agreed_changes,
+                # Older runs marked a crashed executor "done", so its error events are checked too.
+                "executor": None if executor is None else ("failed" if executor_errored else executor)}
 
     def write_artifact(self, run_id: str, name: str, content: str) -> None:
         path = self.dir(run_id) / name

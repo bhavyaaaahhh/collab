@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 
+from collab.agents.base import AgentEvent
 from collab.room.models import RoomError
 from tests.helpers import FINDING, idle, make_run, until
 
@@ -120,6 +121,26 @@ async def test_apply_gate_then_executor(tmp_path):
     assert "change B" in prompt and "change A" not in prompt and "be careful" in prompt
     assert run.record.status == "completed"
     assert (run.dir / "executor.md").exists()
+
+
+async def test_executor_error_fails_the_run(tmp_path):
+    ref = [None]
+    scripts = _concluding_pair(ref)
+
+    async def broken(tool, attempt, o):
+        # the executor hits an API error and the CLI still exits 0
+        run._on_agent(run.agents["executor"], AgentEvent("error", {"message": "API Error: 400"}))
+        return 0
+
+    scripts["executor"] = broken
+    run, fake = make_run(tmp_path, scripts, auto_apply=True)
+    ref[0] = run
+    await run.start()
+    await asyncio.wait_for(run.done(), 3)
+    assert run.agent_status("executor") == "failed"
+    assert run.record.status == "failed"
+    assert "API Error: 400" in (run.dir / "executor.md").read_text()
+    assert any("executor failed" in m.text for m in run.room.messages if m.sender == "system")
 
 
 async def test_apply_rejected_completes_without_executor(tmp_path):

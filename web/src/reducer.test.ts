@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agreedConclusion, initialState, reducer, reviewerMessageCount, reviewerNames, withRecord } from "./reducer";
+import { agreedConclusion, conclusionStatus, executorOutcome, initialState, progress, reducer, reviewerMessageCount, reviewerNames, withRecord } from "./reducer";
 import type { RunRecord, StoredEvent } from "./types";
 
 const record = {
@@ -54,5 +54,41 @@ describe("reducer", () => {
     ]);
     expect(s.costUsd.claude).toBeCloseTo(0.3);
     expect(reviewerNames({ ...record, agents: ["codex", "codex"] })).toEqual(["codex-1", "codex-2"]);
+  });
+});
+
+describe("progress", () => {
+  it("moves through phases as the room fills up", () => {
+    const msg = (n: number, sender: string, text: string): StoredEvent =>
+      ({ n, at: n, kind: "room", event: { type: "message", data: { seq: n, sender, text, at: n } } });
+    let s = fold([msg(1, "claude", "hi")]);
+    expect(progress(s)).toEqual({ current: 0, complete: false });
+    s = reducer(s, msg(2, "system", "Plan accepted."));
+    expect(progress(s).current).toBe(1);
+    s = reducer(s, { n: 3, at: 3, kind: "room", event: { type: "finding", data: {
+      finding: { ...finding, stances: [{ by: "codex", stance: "agree", reasoning: "", amended_change: null, at: 3 }] },
+      status: "agreed" } } });
+    expect(progress(s).current).toBe(2);
+    const c = { id: "conclusion-1", by: "claude", changes: ["a"], unresolved: [], agreed_by: ["claude", "codex"], rejected_by: [] };
+    s = reducer(s, { n: 4, at: 4, kind: "room", event: { type: "conclusion", data: c } });
+    expect(conclusionStatus(s, c)).toBe("agreed");
+    s = reducer(s, { n: 5, at: 5, kind: "run", status: "completed" });
+    expect(progress(s)).toEqual({ current: 3, complete: true });
+    s = reducer(s, { n: 6, at: 6, kind: "status", agent: "executor", status: "done" });
+    expect(progress(s)).toEqual({ current: 4, complete: true });
+  });
+
+  it("treats an executor that errored as failed, even if marked done", () => {
+    const s = fold([
+      { n: 1, at: 1, kind: "agent", agent: "executor", event: { type: "error", data: { message: "API Error: 400" } } },
+      { n: 2, at: 2, kind: "status", agent: "executor", status: "done" },
+    ]);
+    expect(executorOutcome(s)).toBe("failed");
+    expect(progress(s).complete).toBe(false);
+  });
+
+  it("marks rejected conclusions", () => {
+    const c = { id: "conclusion-1", by: "claude", changes: [], unresolved: [], agreed_by: ["claude"], rejected_by: [{ by: "codex", reason: "x" }] };
+    expect(conclusionStatus(fold([]), c)).toBe("rejected");
   });
 });

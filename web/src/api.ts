@@ -1,4 +1,4 @@
-import type { RunInput, RunRecord } from "./types";
+import type { RunInput, RunListItem } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...init });
@@ -13,7 +13,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const post = <T>(path: string, body: unknown = {}) => request<T>(path, { method: "POST", body: JSON.stringify(body) });
 
 export const api = {
-  listRuns: () => request<RunRecord[]>("/api/runs"),
+  listRuns: () => request<RunListItem[]>("/api/runs"),
   createRun: (input: RunInput) => post<{ id: string }>("/api/runs", input),
   sendMessage: (id: string, text: string) => post(`/api/runs/${id}/message`, { text }),
   resolveCheckpoint: (id: string, cid: string, decision: "approved" | "rejected", selected?: number[], note?: string) =>
@@ -21,3 +21,8 @@ export const api = {
   stop: (id: string) => post(`/api/runs/${id}/stop`),
   streamUrl: (id: string) => `/api/runs/${id}/stream`,
 };
+
+export async function fetchArtifact(id: string, name: string): Promise<string | null> {
+  const res = await fetch(`/api/runs/${id}/artifacts/${name}`);
+  return res.ok ? res.text() : null;
+}

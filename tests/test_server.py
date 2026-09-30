@@ -106,3 +106,15 @@ async def test_live_stream_replays_then_follows(client, setup):
     ns = [json.loads(c.split("data: ", 1)[1])["n"] for c in chunks[1:] + [nxt]]
     assert ns == sorted(set(ns))  # no duplicates, in order
     await stream.aclose()
+
+
+async def test_runs_list_has_summary_and_artifacts(client, setup):
+    app = setup[0]
+    run_id = await start(client, setup)
+    await client.post(f"/api/runs/{run_id}/tool", json={"agent": "claude", "name": "send_message", "args": {"text": "hi"}})
+    assert (await client.get("/api/runs")).json()[0]["summary"]["messages"] == 1
+    assert (await client.get(f"/api/runs/{run_id}/artifacts/executor.md")).status_code == 404
+    app.state.store.write_artifact(run_id, "executor.md", "# done")
+    res = await client.get(f"/api/runs/{run_id}/artifacts/executor.md")
+    assert res.status_code == 200 and res.text == "# done"
+    assert (await client.get(f"/api/runs/{run_id}/artifacts/run.json")).status_code == 404

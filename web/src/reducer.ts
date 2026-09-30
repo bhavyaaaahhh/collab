@@ -20,12 +20,13 @@ export interface RunViewState {
   activity: Record<string, Activity[]>;
   agentStatus: Record<string, AgentStatus>;
   costUsd: Record<string, number>;
+  errored: Record<string, boolean>;
 }
 
 export function initialState(): RunViewState {
   return {
     lastN: 0, record: null, runStatus: null, messages: [], findings: {}, plans: {}, conclusions: {},
-    checkpoints: {}, activity: {}, agentStatus: {}, costUsd: {},
+    checkpoints: {}, activity: {}, agentStatus: {}, costUsd: {}, errored: {},
   };
 }
 
@@ -85,7 +86,8 @@ export function reducer(state: RunViewState, e: StoredEvent): RunViewState {
           return { ...s, activity: { ...s.activity, [e.agent]: updated } };
         }
         case "error":
-          return pushActivity(s, e.agent, { type: "error", at: e.at, message: ev.data.message });
+          return { ...pushActivity(s, e.agent, { type: "error", at: e.at, message: ev.data.message }),
+            errored: { ...s.errored, [e.agent]: true } };
         case "turn_end": {
           const next = pushActivity(s, e.agent, { type: "turn_end", at: e.at, costUsd: ev.data.cost_usd });
           const cost = ev.data.cost_usd ?? 0;
@@ -106,4 +108,39 @@ export function agreedConclusion(state: RunViewState): Conclusion | undefined {
 export function reviewerMessageCount(state: RunViewState): number {
   const reviewers = reviewerNames(state.record);
   return state.messages.filter((m) => reviewers.includes(m.sender)).length;
+}
+
+/** Runs recorded before executor failures were tracked mark a crashed executor "done"; its errors tell the truth. */
+export function executorOutcome(state: RunViewState): "running" | "done" | "failed" | null {
+  const status = state.agentStatus.executor;
+  if (status === undefined) return null;
+  if (status === "failed" || (status === "done" && state.errored.executor)) return "failed";
+  return status === "done" ? "done" : "running";
+}
+
+export const PHASES = ["Plan", "Review", "Debate", "Conclusion", "Apply"] as const;
+
+/** How far the collaboration has got, inferred from what has happened in the room. */
+export function progress(state: RunViewState): { current: number; complete: boolean } {
+  const findings = Object.values(state.findings);
+  const checkpoints = Object.values(state.checkpoints);
+  const planDone = state.messages.some((m) => m.sender === "system" && m.text === "Plan accepted.")
+    || checkpoints.some((c) => c.kind === "plan" && c.status !== "pending");
+  const executor = state.agentStatus.executor !== undefined || checkpoints.some((c) => c.kind === "apply");
+  let current = 0;
+  if (planDone || findings.length) current = 1;
+  if (findings.some((f) => f.finding.stances.length)) current = 2;
+  if (Object.keys(state.conclusions).length) current = 3;
+  if (executor) current = 4;
+  const complete = executorOutcome(state) === "done"
+    || (state.runStatus === "completed" && !executor && agreedConclusion(state) !== undefined);
+  return { current, complete };
+}
+
+export type ConclusionStatus = "agreed" | "rejected" | "pending";
+
+export function conclusionStatus(state: RunViewState, c: Conclusion): ConclusionStatus {
+  const reviewers = reviewerNames(state.record);
+  if (reviewers.every((r) => c.agreed_by.includes(r))) return "agreed";
+  return c.rejected_by.length ? "rejected" : "pending";
 }
