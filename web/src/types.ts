@@ -57,3 +57,15 @@ export type StoredEvent = { n: number; at: number } & (
   | { kind: "status"; agent: string; status: AgentStatus }
   | { kind: "run"; status: RunStatus }
 );
+
+export interface RunSummary {
+  messages: number;
+  findings: number;
+  cost_usd: number;
+  ended_at: number;
+  agreed_changes: number | null;
+  executor: "done" | "failed" | "working" | "waiting" | "starting" | "stalled" | null;
+}
+
+// summary is missing when the dashboard talks to a server started before it was added.
+export interface RunListItem extends RunRecord { summary?: RunSummary }

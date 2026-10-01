@@ -19,8 +19,7 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <a href="#/" className="brand">collab</a>
-        <a href="#/new" className="button">New run</a>
+        <a href="#/" className="brand"><span className="brand-mark"><i /><i /></span>collab</a>
       </header>
       {runId ? <RunView key={runId} id={runId} /> : hash === "#/new" ? <StartForm /> : <RunsList />}
     </div>

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -21,6 +21,7 @@ from collab.runs.store import RunInput, RunStore
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB_DIST = ROOT / "web" / "dist"
+PUBLIC_ARTIFACTS = {"conclusion.md", "executor.md"}
 
 
 class ToolCall(BaseModel):
@@ -61,7 +62,7 @@ def create_app(
 
     @app.get("/api/runs")
     def list_runs():
-        return [r.model_dump() for r in store.list()]
+        return [{**r.model_dump(), "summary": store.summary(r)} for r in store.list()]
 
     @app.post("/api/runs")
     async def create_run(inp: RunInput):
@@ -96,6 +97,13 @@ def create_app(
             raise HTTPException(404, f"No run {run_id}.")
         return StreamingResponse(event_stream(app, run_id), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache"})
+
+    @app.get("/api/runs/{run_id}/artifacts/{name}", response_class=PlainTextResponse)
+    def artifact(run_id: str, name: str):
+        path = store.dir(run_id) / name
+        if name not in PUBLIC_ARTIFACTS or not path.is_file():
+            raise HTTPException(404, f"No {name} for run {run_id}.")
+        return path.read_text()
 
     @app.post("/api/runs/{run_id}/tool")
     async def tool(run_id: str, call: ToolCall):
