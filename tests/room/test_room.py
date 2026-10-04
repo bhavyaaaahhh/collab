@@ -116,3 +116,10 @@ def test_executor_does_not_count_toward_conclusion():
     c = r.propose_conclusion("claude", ["x"], [])
     r.agree_conclusion("codex", c.id)
     assert r.concluded().id == c.id
+
+
+def test_conclusion_text_is_posted_for_partner():
+    r = room()
+    r.propose_conclusion("claude", ["edit rule 3"], ["needs update tool"])
+    text = r.messages_for("codex", 0)[-1].text
+    assert "conclusion-1" in text and "edit rule 3" in text and "needs update tool" in text

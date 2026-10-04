@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-runs/
+/runs/
 web/node_modules/
 web/dist/
+collab.config.local.json

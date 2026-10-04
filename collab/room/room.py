@@ -167,6 +167,11 @@ class Room:
         c = Conclusion(id=self._next_id("conclusion"), by=by, changes=changes, unresolved=unresolved, agreed_by=[by])
         self.conclusions[c.id] = c
         self._emit("conclusion", c.model_dump())
+        # Partners only see the room, so the full proposal goes there for them to review.
+        body = "\n".join(f"{i + 1}. {x}" for i, x in enumerate(changes)) or "(no changes)"
+        if unresolved:
+            body += "\n\nUnresolved:\n" + "\n".join(f"- {x}" for x in unresolved)
+        self.post("system", f"{by} proposed {c.id}. Review it, then agree_to_conclusion or reject_conclusion.\n\nChanges:\n{body}")
         return c
 
     def agree_conclusion(self, by: str, conclusion_id: str) -> Conclusion:
@@ -213,6 +218,8 @@ class Room:
         if checkpoint_id not in self.checkpoints:
             raise RoomError(f"No checkpoint with id {checkpoint_id}.")
         cp = self.checkpoints[checkpoint_id]
+        if cp.status != "pending":
+            raise RoomError(f"Checkpoint {checkpoint_id} was already {cp.status}.")
         cp.status, cp.selected, cp.note = status, selected, note
         self._emit("checkpoint", cp.model_dump())
         self.post("system", CHECKPOINT_MESSAGES[(cp.kind, status)])
