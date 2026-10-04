@@ -57,3 +57,21 @@ def test_summary_of_empty_run(tmp_path):
     s = RunStore(tmp_path)
     r = s.create(RunInput(task="t", cwd="/w"))
     assert s.summary(r)["agreed_changes"] is None and s.summary(r)["messages"] == 0
+
+
+def test_list_skips_unreadable_run(tmp_path):
+    s = RunStore(tmp_path)
+    good = s.create(RunInput(task="t", cwd="/w"))
+    (tmp_path / "broken").mkdir()
+    (tmp_path / "broken" / "run.json").write_text('{"id": "broken", "tas')
+    assert [r.id for r in s.list()] == [good.id]
+
+
+def test_summary_skips_malformed_events(tmp_path):
+    s = RunStore(tmp_path)
+    r = s.create(RunInput(task="t", cwd="/w"))
+    for e in [{"kind": "room"}, {"kind": "room", "event": {"type": "finding", "data": {}}},
+              {"kind": "agent", "agent": "claude"}, ["not", "a", "dict"], "text", 7,
+              {"kind": "room", "event": {"type": "message", "data": {"sender": "claude"}}}]:
+        s.append(r.id, e)
+    assert s.summary(r)["messages"] == 1
