@@ -63,8 +63,15 @@ class RunStore:
         return record
 
     def list(self) -> list[RunRecord]:
-        records = [r for p in self.root.iterdir() if p.is_dir() and (r := self.get(p.name))]
+        records = [r for p in self.root.iterdir() if p.is_dir() and (r := self._readable(p.name))]
         return sorted(records, key=lambda r: (r.created_at, r.id), reverse=True)
+
+    def _readable(self, run_id: str) -> RunRecord | None:
+        # One corrupt run.json must not take down the whole runs list.
+        try:
+            return self.get(run_id)
+        except (OSError, ValueError):
+            return None
 
     def append(self, run_id: str, event: dict) -> None:
         with open(self.dir(run_id) / "events.jsonl", "a") as f:
@@ -77,9 +84,11 @@ class RunStore:
         events = []
         for line in path.read_text().splitlines():
             try:
-                events.append(json.loads(line))
+                event = json.loads(line)
             except ValueError:
                 continue  # partial last line from a crash
+            if isinstance(event, dict):
+                events.append(event)
         return events
 
     def summary(self, record: RunRecord) -> dict:
@@ -88,22 +97,25 @@ class RunStore:
         messages, findings, cost, ended = 0, set(), 0.0, record.created_at
         agreed_changes, executor, executor_errored = None, None, False
         for e in self.events(record.id):
-            ended = max(ended, e.get("at", ended))
-            if e.get("kind") == "room":
-                kind, data = e["event"]["type"], e["event"]["data"]
-                if kind == "message" and data.get("sender") in reviewers:
-                    messages += 1
-                elif kind == "finding":
-                    findings.add(data["finding"]["id"])
-                elif kind == "conclusion" and all(r in data.get("agreed_by", []) for r in reviewers):
-                    agreed_changes = len(data.get("changes", []))
-            elif e.get("kind") == "status" and e.get("agent") == "executor":
-                executor = e.get("status")
-            elif e.get("kind") == "agent":
-                if e.get("agent") == "executor" and e["event"]["type"] == "error":
-                    executor_errored = True
-                if e["event"]["type"] == "turn_end":
-                    cost += e["event"]["data"].get("cost_usd") or 0
+            try:
+                ended = max(ended, e.get("at", ended))
+                if e.get("kind") == "room":
+                    kind, data = e["event"]["type"], e["event"]["data"]
+                    if kind == "message" and data.get("sender") in reviewers:
+                        messages += 1
+                    elif kind == "finding":
+                        findings.add(data["finding"]["id"])
+                    elif kind == "conclusion" and all(r in data.get("agreed_by", []) for r in reviewers):
+                        agreed_changes = len(data.get("changes", []))
+                elif e.get("kind") == "status" and e.get("agent") == "executor":
+                    executor = e.get("status")
+                elif e.get("kind") == "agent":
+                    if e.get("agent") == "executor" and e["event"]["type"] == "error":
+                        executor_errored = True
+                    if e["event"]["type"] == "turn_end":
+                        cost += e["event"]["data"].get("cost_usd") or 0
+            except (KeyError, TypeError, AttributeError):
+                continue  # malformed event, e.g. written by an older version
         return {"messages": messages, "findings": len(findings), "cost_usd": round(cost, 4), "ended_at": ended,
                 "agreed_changes": agreed_changes,
                 # Older runs marked a crashed executor "done", so its error events are checked too.
